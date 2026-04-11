@@ -167,7 +167,7 @@ export class MusicPlayer extends EventEmitter {
             url
         ]);
 
-        const ffmpeg = spawn(ffmpegPath.path, [
+        const ffmpeg = spawn('ffmpeg', [
             '-i', 'pipe:0',
             '-vn',
             '-f', 's16le',
