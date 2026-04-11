@@ -1,8 +1,8 @@
-import { 
-    createAudioPlayer, 
-    createAudioResource, 
-    AudioPlayerStatus, 
-    VoiceConnectionStatus, 
+import {
+    createAudioPlayer,
+    createAudioResource,
+    AudioPlayerStatus,
+    VoiceConnectionStatus,
     joinVoiceChannel,
     entersState,
     AudioPlayer,
@@ -66,7 +66,7 @@ export class MusicPlayer extends EventEmitter {
     public getGuildData(guildId: string): GuildQueue {
         if (!this.queue.has(guildId)) {
             const player = createAudioPlayer();
-            
+
             player.on('error', error => {
                 console.error(`Error: ${error.message}`);
             });
@@ -139,7 +139,7 @@ export class MusicPlayer extends EventEmitter {
             data.currentResource = resource;
             data.currentProcesses = { ytdlp, ffmpeg };
             data.player.play(resource);
-            
+
             this.emit('songStart', guildId, song);
         } catch (error) {
             console.error("Error playing next song:", error);
@@ -153,30 +153,27 @@ export class MusicPlayer extends EventEmitter {
             try {
                 data.currentProcesses.ytdlp.kill('SIGKILL');
                 data.currentProcesses.ffmpeg.kill('SIGKILL');
-            } catch (e) {}
+            } catch (e) { }
             data.currentProcesses = null;
         }
     }
 
     private createResource(url: string, volume: number): { resource: AudioResource, ytdlp: any, ffmpeg: any } {
         const ytdlp = spawn(ytdlpBinary, [
-            '-f', 'bestaudio[ext=webm]/bestaudio/best',
+            '-f', 'bestaudio/best',
             '--no-playlist',
-            '--no-warnings',
-            '--quiet',
+            '--quiet', // Hanya hilangkan info command, tapi error jalan
             '-o', '-',
             url
         ]);
 
         const ffmpeg = spawn(ffmpegPath.path, [
             '-i', 'pipe:0',
-            '-vn', // Disable video (essential for speed)
+            '-vn',
             '-f', 's16le',
             '-ar', '48000',
             '-ac', '2',
-            '-analyzeduration', '0',
-            '-probesize', '32',
-            '-loglevel', 'warning',
+            '-loglevel', 'error', // FFMPEG akan lapor jika ada error sistem
             'pipe:1'
         ]);
 
@@ -188,12 +185,21 @@ export class MusicPlayer extends EventEmitter {
         });
 
         resource.volume?.setVolume(volume);
-        
-        ytdlp.on('error', err => console.error('yt-dlp error:', err));
-        ffmpeg.on('error', err => console.error('ffmpeg error:', err));
+
+        // Membuka kembali Pipa Error (Ini sangat penting untuk debugging bot-hosting)
+        ytdlp.stderr.on('data', err => console.error(`[YT-DLP] ${err.toString().trim()}`));
+        ffmpeg.stderr.on('data', err => console.error(`[FFMPEG] ${err.toString().trim()}`));
+
+        ytdlp.on('error', err => console.error('[YT-DLP CRASH]:', err));
+        ffmpeg.on('error', err => console.error('[FFMPEG CRASH]:', err));
+
+        ytdlp.on('close', code => {
+            if (code !== 0 && code !== null) console.log(`[YT-DLP] Keluar dengan kode: ${code}`);
+        });
 
         return { resource, ytdlp, ffmpeg };
     }
+
 
     public setVolume(guildId: string, volume: number): boolean {
         const data = this.queue.get(guildId);
@@ -241,7 +247,7 @@ export class MusicPlayer extends EventEmitter {
     public toggleLoop(guildId: string): 'none' | 'track' | 'queue' {
         const data = this.queue.get(guildId);
         if (!data) return 'none';
-        
+
         if (data.loopMode === 'none') {
             data.loopMode = 'track';
         } else if (data.loopMode === 'track') {
@@ -296,16 +302,16 @@ export async function fetchMetadata(url: string): Promise<Song[]> {
         ytdlp.stdout.on('data', (data: Buffer) => output += data.toString());
         ytdlp.on('close', (code: number) => {
             if (code !== 0) return reject(new Error('Failed to fetch YouTube metadata'));
-            
+
             const lines = output.split('\n').map(l => l.trim()).filter(l => l.length > 0);
             let songs = lines.map(line => {
                 try {
                     const data = JSON.parse(line);
                     const id = data.id || '';
                     const finalUrl = (id && id !== 'NA') ? `https://www.youtube.com/watch?v=${id}` : '';
-                    return { 
-                        title: data.title || 'Unknown Title', 
-                        url: finalUrl, 
+                    return {
+                        title: data.title || 'Unknown Title',
+                        url: finalUrl,
                         duration: data.duration_string || 'Unknown',
                         thumbnail: (data.thumbnail && data.thumbnail !== 'NA') ? data.thumbnail : ''
                     };
