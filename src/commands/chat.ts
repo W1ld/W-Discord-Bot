@@ -5,20 +5,20 @@ import { MusicPlayer } from '../client/player.js';
 export default {
     data: new SlashCommandBuilder()
         .setName('chat')
-        .setDescription('Talk to Gemini AI')
-        .addStringOption(option => 
+        .setDescription('Talk to Ayang Sara')
+        .addStringOption(option =>
             option.setName('message')
-                .setDescription('Your message for the AI')
+                .setDescription('Write your message')
                 .setRequired(true)),
-    
+
     async execute(interaction: ChatInputCommandInteraction, _player: MusicPlayer, gemini: GeminiClient): Promise<void> {
         const message = interaction.options.getString('message', true);
-        
+
         await interaction.deferReply();
 
         try {
             const response = await gemini.generateResponse(message);
-            
+
             if (response.length > 2000) {
                 const chunks = response.match(/[\s\S]{1,2000}/g);
                 if (chunks) {
