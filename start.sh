@@ -1,6 +1,7 @@
 #!/bin/bash
-echo "📦 Installing dependencies..."
-npm install
+echo "🔄 Mengambil pembaruan dari GitHub..."
+git fetch
+git reset --hard origin/main
 
 echo "🔨 Building TypeScript..."
 npm run build
