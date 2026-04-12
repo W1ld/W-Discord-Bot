@@ -125,7 +125,15 @@ function createNowPlayingUI(guildId: string, song: Song) {
 }
 
 // Player Events
+const disconnectTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
 player.on('songStart', async (guildId: string, song: Song) => {
+    // Batalkan timer auto-disconnect jika ada lagu baru
+    if (disconnectTimers.has(guildId)) {
+        clearTimeout(disconnectTimers.get(guildId)!);
+        disconnectTimers.delete(guildId);
+    }
+
     const data = player.getGuildData(guildId);
     const guild = client.guilds.cache.get(guildId);
     if (!guild) return;
@@ -158,6 +166,17 @@ player.on('queueEnd', async (guildId: string) => {
         } catch (e) { }
         data.nowPlayingMessage = null;
     }
+
+    // Auto-disconnect setelah 1 menit tanpa aktivitas
+    const timer = setTimeout(() => {
+        const currentData = player.getGuildData(guildId);
+        if (currentData.connection && !currentData.currentSong) {
+            currentData.connection.destroy();
+            currentData.connection = null;
+        }
+        disconnectTimers.delete(guildId);
+    }, 60_000);
+    disconnectTimers.set(guildId, timer);
 });
 
 // Load Commands

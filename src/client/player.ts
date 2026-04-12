@@ -181,11 +181,16 @@ export class MusicPlayer extends EventEmitter {
             '-f', 'bestaudio/best',
             '--no-playlist',
             '--quiet', // Hanya hilangkan info command, tapi error jalan
+            '--js-runtimes', 'node', // Gunakan Node.js untuk ekstraksi YouTube
             '-o', '-',
             url
         ]);
 
-        const ffmpeg = spawn('ffmpeg', [
+        // Smart FFMPEG Path checking: Use system ffmpeg if on Pterodactyl hosting, else use local module
+        const isPterodactyl = !!process.env.P_SERVER_UUID;
+        const ffmpegExecutable = isPterodactyl ? 'ffmpeg' : ffmpegPath.path;
+
+        const ffmpeg = spawn(ffmpegExecutable, [
             '-i', 'pipe:0',
             '-vn',
             '-f', 's16le',
@@ -308,6 +313,7 @@ export async function fetchMetadata(url: string): Promise<Song[]> {
             '--flat-playlist',
             '--no-warnings',
             '--ignore-errors',
+            '--js-runtimes', 'node', // Gunakan Node.js untuk ekstraksi YouTube
             '-j',
             url
         ]);
