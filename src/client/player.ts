@@ -53,6 +53,7 @@ export interface GuildQueue {
     textChannelId: string | null;
     loopMode: 'none' | 'track' | 'queue';
     forceSkip: boolean;
+    isFallbackPending: boolean;
 }
 
 export class MusicPlayer extends EventEmitter {
@@ -72,7 +73,21 @@ export class MusicPlayer extends EventEmitter {
             });
 
             player.on(AudioPlayerStatus.Idle, () => {
-                this.playNext(guildId);
+                const data = this.queue.get(guildId);
+                if (data && data.isFallbackPending) {
+                    data.isFallbackPending = false;
+                    this.playNext(guildId, true);
+                } else if (data && data.loopMode === 'track' && data.currentSong) {
+                    // Masukkan lagu yang sama ke bagian paling depan antrean
+                    data.songs.unshift(data.currentSong);
+                    this.playNext(guildId);
+                } else if (data && data.loopMode === 'queue' && data.currentSong) {
+                    // Masukkan lagu yang selesai ke bagian paling belakang antrean
+                    data.songs.push(data.currentSong);
+                    this.playNext(guildId);
+                } else {
+                    this.playNext(guildId);
+                }
             });
 
             this.queue.set(guildId, {
@@ -86,7 +101,8 @@ export class MusicPlayer extends EventEmitter {
                 nowPlayingMessage: null,
                 textChannelId: null,
                 loopMode: 'none',
-                forceSkip: false
+                forceSkip: false,
+                isFallbackPending: false
             });
         }
         return this.queue.get(guildId)!;
@@ -95,54 +111,56 @@ export class MusicPlayer extends EventEmitter {
     public addToQueue(guildId: string, song: Song): void {
         const data = this.getGuildData(guildId);
         data.songs.push(song);
-        if (data.player.state.status === AudioPlayerStatus.Idle) {
+        if (data.player.state.status === AudioPlayerStatus.Idle && !data.currentProcesses) {
             this.playNext(guildId);
         }
     }
 
-    public async playNext(guildId: string): Promise<void> {
+    public async playNext(guildId: string, isFallback: boolean = false): Promise<void> {
         const data = this.queue.get(guildId);
         if (!data) return;
 
-        const previousSong = data.currentSong;
-        if (previousSong) {
-            if (data.forceSkip) {
-                // If skipped, we only re-add to queue if looping queue
-                if (data.loopMode === 'queue') {
-                    data.songs.push(previousSong);
-                }
-                data.forceSkip = false;
-            } else {
-                if (data.loopMode === 'track') {
-                    data.songs.unshift(previousSong);
-                } else if (data.loopMode === 'queue') {
-                    data.songs.push(previousSong);
-                }
+        if (!isFallback) {
+            if (data.songs.length === 0) {
+                this.cleanupProcesses(guildId);
+                data.currentSong = null;
+                data.currentResource = null;
+                this.emit('queueEnd', guildId);
+                return;
             }
-        }
-
-        if (data.songs.length === 0) {
             this.cleanupProcesses(guildId);
-            data.currentSong = null;
-            data.currentResource = null;
-            this.emit('queueEnd', guildId);
-            return;
+            data.currentSong = data.songs.shift()!;
         }
 
-        this.cleanupProcesses(guildId);
+        const song = data.currentSong!;
+        let urlToPlay = song.url;
 
-        const song = data.songs.shift()!;
-        data.currentSong = song;
+        // Auto-Fallback Logic
+        if (isFallback) {
+            urlToPlay = `scsearch1:${song.title}`;
+            console.log(`[FALLBACK] YouTube Diblokir. Beralih ke SoundCloud: ${urlToPlay}`);
+        }
 
         try {
-            const { resource, ytdlp, ffmpeg } = this.createResource(song.url, data.volume);
+            const { resource, ytdlp, ffmpeg } = this.createResource(urlToPlay, data.volume);
             data.currentResource = resource;
             data.currentProcesses = { ytdlp, ffmpeg };
             data.player.play(resource);
 
-            this.emit('songStart', guildId, song);
+            // Hook the fallback detection
+            ytdlp.on('close', (code: number) => {
+                if (code !== 0 && code !== null && !isFallback && song.url.includes('youtube')) {
+                    console.log(`[YT-DLP] Error (Banned). Mencoba Fallback SoundCloud untuk: ${song.title}`);
+                    data.isFallbackPending = true;
+                }
+            });
+
+            if (!isFallback) {
+                this.emit('songStart', guildId, song);
+            }
         } catch (error) {
             console.error("Error playing next song:", error);
+            data.isFallbackPending = false;
             this.playNext(guildId);
         }
     }
@@ -192,10 +210,6 @@ export class MusicPlayer extends EventEmitter {
 
         ytdlp.on('error', err => console.error('[YT-DLP CRASH]:', err));
         ffmpeg.on('error', err => console.error('[FFMPEG CRASH]:', err));
-
-        ytdlp.on('close', code => {
-            if (code !== 0 && code !== null) console.log(`[YT-DLP] Keluar dengan kode: ${code}`);
-        });
 
         return { resource, ytdlp, ffmpeg };
     }

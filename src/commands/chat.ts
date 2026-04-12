@@ -32,7 +32,7 @@ export default {
             }
         } catch (error) {
             console.error(error);
-            await interaction.editReply('❌ Failed to connect to Gemini AI.');
+            await interaction.editReply('❌ Failed to connect to server.');
         }
     }
 };
