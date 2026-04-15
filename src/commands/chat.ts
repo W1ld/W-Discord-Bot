@@ -17,7 +17,7 @@ export default {
         await interaction.deferReply();
 
         try {
-            const response = await gemini.generateResponse(message);
+            const response = await gemini.generateResponse(message, interaction.user.id);
 
             if (response.length > 2000) {
                 const chunks = response.match(/[\s\S]{1,2000}/g);
